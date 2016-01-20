@@ -8,6 +8,7 @@ require "gyoku"
 
 require "akami/wsse/verify_signature"
 require "akami/wsse/signature"
+require "akami/wsse/session"
 
 module Akami
 
@@ -48,7 +49,13 @@ module Akami
       self.digest = digest
     end
 
-    attr_accessor :username, :password, :created_at, :expires_at, :signature, :verify_response
+    attr_accessor :username,
+      :password,
+      :created_at,
+      :expires_at,
+      :signature,
+      :verify_response,
+      :session
 
     def sign_with=(klass)
       @signature = klass
@@ -78,6 +85,10 @@ module Akami
     # Sets whether to generate a wsu:Timestamp header.
     def timestamp=(timestamp)
       @wsu_timestamp = timestamp
+    end
+
+    def session?
+      !!@session
     end
 
     # Hook for Soap::XML that allows us to add attributes to the env:Body tag
@@ -112,6 +123,19 @@ module Akami
         end
       end
 
+      if session?
+        xml.merge!(xenc_session) do |key, v1, v2|
+          v1.merge!(v2) do |key, v1, v2|
+            if v1.is_a?(Hash) && v2.is_a?(Hash)
+              v1.merge!(v2)
+            end
+          end
+        end
+        unless xml['wsse:Security'][:order!].nil?
+          xml['wsse:Security'][:order!] << 'xenc:EncryptedKey'
+        end
+      end
+
       Gyoku.xml xml
     end
   private
@@ -143,6 +167,10 @@ module Akami
       tag, hash = signature_hash.shift
 
       security_hash nil, tag, hash, signature_hash
+    end
+
+    def xenc_session
+      security_hash session.namespace, session.tag, session.hash, session.extra
     end
 
     # Returns a Hash containing wsu:Timestamp details.
